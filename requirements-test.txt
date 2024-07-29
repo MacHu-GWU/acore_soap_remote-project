@@ -1,0 +1,4 @@
+# This requirements file should only include dependencies for testing
+pytest                                  # test framework
+pytest-cov                              # coverage test
+acore_server_metadata>=1.0.1,<2.0.0
