@@ -5,6 +5,8 @@ from acore_soap_remote import api
 
 def test():
     _ = api
+    _ = api.SoapResponseAsyncGetter
+    _ = api.run_soap_command
 
 
 if __name__ == "__main__":

@@ -19,12 +19,14 @@ def test():
         raise SystemError(f"EC2 {server_id!r} is not running")
     ec2_instance_id = server.ec2_inst.id
 
+    # Run GM commands in sequence, and read the response data from stdout
     soap_response_async_getter = run_soap_command(
         gm_commands=[
             ".account delete test1",
             ".account create test1 1234",
             ".account set gmlevel test1 3 -1",
             ".account set password test1 123456 123456",
+            ".account delete test1",
         ],
         ec2_instance_id=ec2_instance_id,
         ssm_client=ssm_client,
@@ -35,12 +37,14 @@ def test():
         print("=" * 80)
         print(f"{soap_response.succeeded = }, {soap_response.message = }")
 
+    # Run GM commands in sequence, and read the response data from S3
     soap_response_async_getter = run_soap_command(
         gm_commands=[
             ".account delete test1",
             ".account create test1 1234",
             ".account set gmlevel test1 3 -1",
             ".account set password test1 123456 123456",
+            ".account delete test1",
         ],
         ec2_instance_id=ec2_instance_id,
         ssm_client=ssm_client,

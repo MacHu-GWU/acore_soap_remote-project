@@ -24,24 +24,13 @@ if T.TYPE_CHECKING:  # pragma: no cover
     from mypy_boto3_ssm.client import SSMClient
 
 
-def upload_requests_to_s3(
-    requests: T.List[SOAPRequest],
-    s3_client: "S3Client",
-    s3uri: str,
-):
-    put_object(
-        s3_client=s3_client,
-        s3uri=s3uri,
-        body=json.dumps([request.to_dict() for request in requests]),
-    )
-
-
 def build_cli_arg_for_gm(
     command: str,
     username: T.Optional[str] = None,
     password: T.Optional[str] = None,
     host: T.Optional[str] = None,
     port: T.Optional[int] = None,
+    delay: int = 100,
     raises: bool = True,
     output_s3uri: T.Optional[str] = None,
     path_agent_cli: str = path_agent_cli,
@@ -62,6 +51,8 @@ def build_cli_arg_for_gm(
         args.append(f"--host={host}")
     if port is not None:
         args.append(f"--port={port}")
+    if delay:
+        args.append(f"--delay={delay}")
     if raises is not None:
         if raises:
             args.append(f"--raises=True")
@@ -117,8 +108,7 @@ class SoapResponseAsyncGetter:
             output = command_invocation.StandardOutputContent
             lines = output.splitlines()
             responses = [
-                SOAPResponse.from_dict(json.loads(json_str)[0])
-                for json_str in lines
+                SOAPResponse.from_dict(json.loads(json_str)[0]) for json_str in lines
             ]
         else:
             json_str = get_object(s3_client=self.s3_client, s3uri=self.output_s3uri)
@@ -139,6 +129,7 @@ def run_soap_command(
     output_s3uri: T.Optional[str] = None,
     s3_client: T.Optional["S3Client"] = None,
     path_agent_cli: str = path_agent_cli,
+    delays_between_command: int = 100,
     delays: int = 1,
     timeout: int = 10,
     verbose: bool = True,
@@ -158,28 +149,32 @@ def run_soap_command(
 
     .. code-block:: python
 
-        >>> response = run_soap_command(bsm, "sbx-blue", ".server info")
-        >>> response = run_soap_command(bsm, "sbx-blue", [".account create test1 test1", ".account create test2 test2"])
+        >>> async_getter = response = run_soap_command(
+        ...     gm_commands=[".server info"],
+        ...     ec2_instance_id="i-1234567890abcdef0",
+        ...     ssm_client=ssm_client,
+        ... )
+        >>> responses = async_getter.get()
 
-    :param bsm: ``boto_session_manager.BotoSesManager`` 对象, 定义了 AWS 权限.
     :param gm_commands: 一组 GM 命令.
-    :param request_like: 请参考
-        :class:`~acore_soap_app.agent.impl.SOAPRequest.batch_load`
+    :param ec2_instance_id: EC2 实例 ID.
+    :param ssm_client: boto3.client("ssm") 对象.
     :param username: 默认的用户名, 只有当 request.username 为 None 的时候才会用到.
     :param password: 默认的密码, 只有当 request.password 为 None 的时候才会用到.
+    :param host: 默认的 host, 只有当 request.host 为 None 的时候才会用到.
+    :param port: 默认的 port, 只有当 request.port 为 None 的时候才会用到.
     :param raises: 默认为 True. 如果为 True, 则在遇到错误时抛出异常. 反之则将
         failed SOAP Response 原封不动地返回.
     :param input_s3uri: 如果指定, 则将输入写入 S3. 常用于 Payload 比较大的情况.
         如果你一次性发送的 request 大于 20 条, 则必须使用这个参数.
     :param output_s3uri: 如果不指定, 则默认将输出作为 JSON 打印. 如果指定了 s3uri,
         则将输出写入到 S3.
-    :param path_cli: EC2 上 acsoap 命令行工具的绝对路径.
-    :param sync: 同步和异步模式, 默认为同步模式
-        - 如果以同步模式运行, 则会等待 SSM Run Command 完成
-        - 如果以异步模式运行, 则会立刻返回一个 SSM Run Command 的 command id.
-    :param delays: 同步模式下的等待间隔
-    :param timeout: 同步模式下的超时限制
-    :param verbose: 同步模式下是否显示进度条
+    :param s3_client: boto3.client("s3") 对象.
+    :param path_agent_cli: EC2 上 acsoap 命令行工具的绝对路径.
+    :param delays_between_command: 在运行每个 GM 命令之间的延迟时间, 单位为毫秒.
+    :param delays: 等待 run command 完成期间查询状态的间隔, 单位为秒.
+    :param timeout: run command 的超时限制.
+    :param verbose: 在等待 run command 完成时是否显示进度条.
     """
     # validate args
     if (input_s3uri is not None) or (output_s3uri is not None):
@@ -215,6 +210,7 @@ def run_soap_command(
                 password=password,
                 host=host,
                 port=port,
+                delay=delays_between_command,
                 raises=raises,
                 output_s3uri=output_s3uri,
                 path_agent_cli=path_agent_cli,
